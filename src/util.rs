@@ -177,11 +177,11 @@ impl MachineTopology {
     pub fn from_files(lcpu_path: &Path, numactl_path: &Path) -> MachineTopology {
         let mut file = File::open(lcpu_path).expect("lscpu.csv file does not exist?");
         let mut lscpu_string = String::new();
-        let _ = file.read_to_string(&mut lscpu_string).unwrap();
+        let _ = file.read_to_string(&mut lscpu_string).expect("lscpu.csv file does not contain anything?");
 
         let mut file = File::open(numactl_path).expect("numactl.dat file does not exist?");
         let mut numactl_string = String::new();
-        let _ = file.read_to_string(&mut numactl_string).unwrap();
+        let _ = file.read_to_string(&mut numactl_string).expect("numactl.dat file does not contain anything?");
 
         MachineTopology::from_strings(lscpu_string, numactl_string)
     }
@@ -192,18 +192,12 @@ impl MachineTopology {
             .filter(|s| s.trim().len() > 0 && !s.trim().starts_with("#"))
             .collect();
 
-        type Row = (Node, Socket, Core, Cpu, String); // Online MHz
+        type Row = (Node, Socket, Core, Cpu, L1, L1, L2, L3); // Online MHz
         let mut rdr = csv::Reader::from_string(no_comments.join("\n")).has_headers(false);
         let rows = rdr.decode().collect::<csv::Result<Vec<Row>>>().unwrap();
 
         let mut data: Vec<CpuInfo> = Vec::with_capacity(rows.len());
         for row in rows {
-            let caches: Vec<u64> = row
-                .4
-                .split(":")
-                .map(|s| u64::from_str(s).unwrap())
-                .collect();
-            assert_eq!(caches.len(), 4);
             let node: NodeInfo =
                 get_node_info(row.0, &numactl_output).expect("Can't find node in numactl output?");
             let tuple: CpuInfo = CpuInfo {
@@ -211,9 +205,9 @@ impl MachineTopology {
                 socket: row.1,
                 core: row.2,
                 cpu: row.3,
-                l1: caches[0],
-                l2: caches[2],
-                l3: caches[3],
+                l1: row.4,
+                l2: row.6,
+                l3: row.7,
             };
             data.push(tuple);
         }
