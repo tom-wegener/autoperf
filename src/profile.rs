@@ -1067,7 +1067,7 @@ pub fn get_perf_command(
         perf.arg("stat");
         perf.arg("-aA");
         perf.arg("-I 250");
-        perf.arg("-x ;");
+        perf.arg("-x ';'");
     } else {
         perf.arg("record");
         perf.arg("--group");
