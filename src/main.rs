@@ -22,7 +22,7 @@ use search::print_unknown_events;
 
 fn setup_logging(lvl: &str) {
     use env_logger::Env;
-    env_logger::from_env(Env::default().default_filter_or(lvl)).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or(lvl)).init();
 }
 
 fn main() {
