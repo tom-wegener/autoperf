@@ -25,7 +25,7 @@ libc = "0.2.16"
 clap = { version = "2", features = ["yaml"] }
 x86 = { version = "0.47", features = ["performance-counter"] }
 phf = "0.9.*"
-itertools = "0.5"
+itertools = "0.10"
 serde = { version = "1", features = ["derive"] }
 wait-timeout = "0.2"
 

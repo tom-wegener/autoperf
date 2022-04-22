@@ -11,7 +11,7 @@ use std::thread;
 
 use std::fmt;
 
-use itertools::{iproduct, Itertools};
+use itertools::iproduct;
 use serde::Serialize;
 use std::time::Duration;
 use wait_timeout::ChildExt;
@@ -748,7 +748,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
 
     // Finally, profile the runs we are supposed to execute based on the command line args
     let mut i = 0;
-    for run in runs.iter_mut().skip(start).step(stepping) {
+    for run in runs.iter_mut().skip(start).step_by(stepping) {
         if !dryrun {
             run.profile().ok();
         } else {

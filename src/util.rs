@@ -1,7 +1,6 @@
 #![allow(unused)]
 
 use csv;
-use itertools::*;
 use log::error as lerror;
 use log::*;
 use nom::*;
@@ -364,7 +363,7 @@ impl MachineTopology {
         let mut cpus: Vec<&CpuInfo> = self.data.iter().filter(|t| t.l3 == l3).collect();
         cpus.sort_by_key(|c| c.core);
         // TODO: implicit assumption that we have two HTs
-        cpus.into_iter().step(2).collect()
+        cpus.into_iter().step_by(2).collect()
     }
 
     pub fn same_socket(&self) -> Vec<Vec<&CpuInfo>> {
@@ -415,7 +414,7 @@ impl MachineTopology {
         let mut cpus: Vec<&CpuInfo> = self.data.iter().collect();
         cpus.sort_by_key(|c| c.core);
         // TODO: implicit assumption that we have two HTs
-        vec![cpus.into_iter().step(2).collect()]
+        vec![cpus.into_iter().step_by(2).collect()]
     }
 }
 
