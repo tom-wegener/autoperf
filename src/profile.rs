@@ -1,7 +1,5 @@
-use std;
 use std::collections::{BTreeMap, HashMap};
 
-use csv;
 use lazy_static::lazy_static;
 use pbr::ProgressBar;
 use std::error;
@@ -14,7 +12,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str::FromStr;
 use x86::cpuid;
-use x86::perfcnt::intel::{events, Counter, EventDescription, MSRIndex, PebsType, Tuple};
+use x86::perfcnt::intel::{events, Counter, EventDescription, MSRIndex, Tuple};
 
 use super::util::*;
 use log::*;
@@ -158,26 +156,26 @@ lazy_static! {
 
 fn execute_perf(
     perf: &mut Command,
-    cmd: &Vec<String>,
-    counters: &Vec<String>,
+    cmd: &[String],
+    counters: &[String],
     datafile: &Path,
     dryrun: bool,
 ) -> (String, String, String) {
-    assert!(cmd.len() >= 1);
+    assert!(!cmd.is_empty());
     let perf = perf.arg("-o").arg(datafile.as_os_str());
     let events: Vec<String> = counters.iter().map(|c| format!("-e {}", c)).collect();
 
     let perf = perf.args(events.as_slice());
-    let perf = perf.args(cmd.as_slice());
-    let perf_cmd_str: String = format!("{:?}", perf).replace("\"", "");
+    let perf = perf.args(cmd);
+    let perf_cmd_str: String = format!("{:?}", perf).replace('"', "");
 
     let (stdout, stderr) = if !dryrun {
         match perf.output() {
             Ok(out) => {
-                let stdout =
-                    String::from_utf8(out.stdout).unwrap_or(String::from("Unable to read stdout!"));
-                let stderr =
-                    String::from_utf8(out.stderr).unwrap_or(String::from("Unable to read stderr!"));
+                let stdout = String::from_utf8(out.stdout)
+                    .unwrap_or_else(|_| "Unable to read stdout!".to_string());
+                let stderr = String::from_utf8(out.stderr)
+                    .unwrap_or_else(|_| "Unable to read stderr!".to_string());
 
                 if out.status.success() {
                     trace!("stdout:\n{:?}", stdout);
@@ -227,7 +225,7 @@ pub fn get_known_events<'a>() -> Vec<&'a EventDescription<'static>> {
         .collect()
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone, PartialOrd, Ord)]
 pub enum MonitoringUnit {
     /// Devices
@@ -295,7 +293,7 @@ impl fmt::Display for MonitoringUnit {
 }
 
 impl MonitoringUnit {
-    fn new<'a>(unit: &'a str) -> MonitoringUnit {
+    fn new(unit: &str) -> MonitoringUnit {
         match unit.to_lowercase().as_str() {
             "cpu" => MonitoringUnit::CPU,
             "cbo" => MonitoringUnit::CBox,
@@ -326,8 +324,8 @@ impl MonitoringUnit {
         }
     }
 
-    pub fn to_intel_event_description(&self) -> Option<&'static str> {
-        match *self {
+    pub fn to_intel_event_description(self) -> Option<&'static str> {
+        match self {
             MonitoringUnit::CPU => None,
             MonitoringUnit::CBox => Some("CBO"),
             MonitoringUnit::QPI => Some("QPI_LL"),
@@ -350,8 +348,8 @@ impl MonitoringUnit {
     }
 
     /// Return the perf prefix for selecting the right PMU unit in case of uncore counters.
-    pub fn to_perf_prefix(&self) -> Option<&'static str> {
-        let res = match *self {
+    pub fn to_perf_prefix(self) -> Option<&'static str> {
+        let res = match self {
             MonitoringUnit::CPU => Some("cpu"),
             MonitoringUnit::CBox => Some("uncore_cbox"),
             MonitoringUnit::QPI => Some("uncore_qpi"),
@@ -373,7 +371,9 @@ impl MonitoringUnit {
         };
 
         // Note: If anything here does not return uncore_ as a prefix, you need to update extract.rs!
-        res.map(|string| assert!(string.starts_with("uncore_") || string.starts_with("cpu")));
+        if let Some(string) = res {
+            assert!(string.starts_with("uncore_") || string.starts_with("cpu"));
+        };
 
         res
     }
@@ -407,12 +407,12 @@ impl<'a, 'b> PerfEvent<'a, 'b> {
         let matched_devices: Vec<String> = PMU_DEVICES
             .iter()
             .filter(|d| typ.to_perf_prefix().map_or(false, |t| d.starts_with(t)))
-            .map(|d| d.clone())
+            .cloned()
             .collect();
         devices.extend(matched_devices);
 
         // We can have no devices if we don't understand how to match the unit name to perf names:
-        if devices.len() == 0 {
+        if devices.is_empty() {
             debug!(
                 "Unit {:?} is not available to measure '{}'.",
                 self.unit(),
@@ -449,9 +449,7 @@ impl<'a, 'b> PerfEvent<'a, 'b> {
     }
 
     pub fn unit(&self) -> MonitoringUnit {
-        self.0
-            .unit
-            .map_or(MonitoringUnit::CPU, |u| MonitoringUnit::new(u))
+        self.0.unit.map_or(MonitoringUnit::CPU, MonitoringUnit::new)
     }
 
     /// Is this event an offcore event?
@@ -480,7 +478,7 @@ impl<'a, 'b> PerfEvent<'a, 'b> {
         }
     }
 
-    fn push_arg(configs: &mut Vec<Vec<String>>, value: String) {
+    fn push_arg(configs: &mut [Vec<String>], value: String) {
         for config in configs.iter_mut() {
             config.push(value.clone());
         }
@@ -513,9 +511,10 @@ impl<'a, 'b> PerfEvent<'a, 'b> {
         }
         PerfEvent::push_arg(&mut ret, format!("name={}", self.0.event_name));
 
-        let is_pcu = self.0.unit.map_or(false, |u| {
-            return MonitoringUnit::new(u) == MonitoringUnit::PCU;
-        });
+        let is_pcu = self
+            .0
+            .unit
+            .map_or(false, |u| MonitoringUnit::new(u) == MonitoringUnit::PCU);
 
         match self.0.event_code {
             Tuple::One(ev) => {
@@ -623,24 +622,23 @@ impl<'a, 'b> PerfEvent<'a, 'b> {
     }
 
     pub fn perf_qualifiers(&self) -> String {
-        let qualifiers = String::from("S");
-        if self.0.pebs == PebsType::PebsOrRegular {
-            // Adding 'p' for PebsOrRegular event doesnt seem to work
-            // for many events in perf that Intel regards as PEBS capable events
-            // (see issue #2)
-        } else if self.0.pebs == PebsType::PebsOnly {
-            // Adding a 'p' here seems counterproducive (perf won't measure the events then)
-            // so we do nothing
-        }
-        qualifiers
+        "S".to_string()
+        // if self.0.pebs == PebsType::PebsOrRegular {
+        //     // Adding 'p' for PebsOrRegular event doesnt seem to work
+        //     // for many events in perf that Intel regards as PEBS capable events
+        //     // (see issue #2)
+        // } else if self.0.pebs == PebsType::PebsOnly {
+        //     // Adding a 'p' here seems counterproducive (perf won't measure the events then)
+        //     // so we do nothing
+        // }
     }
 
     fn filters(&self) -> Vec<&str> {
         self.0.filter.map_or(Vec::new(), |value| {
             value
-                .split(",")
+                .split(',')
                 .map(|x| x.trim())
-                .filter(|x| x.len() > 0)
+                .filter(|x| !x.is_empty())
                 .collect()
         })
     }
@@ -748,7 +746,7 @@ impl<'a, 'b> PerfEventGroup<'a, 'b> {
         assignment: Vec<&'a PerfEvent<'a, 'b>>,
     ) -> Option<Vec<&'a PerfEvent<'a, 'b>>> {
         // Are we done yet?
-        if events.len() == 0 {
+        if events.is_empty() {
             return Some(assignment);
         }
         // Are we too deep?
@@ -809,10 +807,12 @@ impl<'a, 'b> PerfEventGroup<'a, 'b> {
         let mut events: Vec<&PerfEvent> = self
             .events_by_unit(unit)
             .into_iter()
-            .filter(|c| match (c.counter(), new_event.counter()) {
-                (Counter::Programmable(_), Counter::Programmable(_)) => true,
-                (Counter::Fixed(_), Counter::Fixed(_)) => true,
-                _ => false,
+            .filter(|c| {
+                matches!(
+                    (c.counter(), new_event.counter()),
+                    (Counter::Programmable(_), Counter::Programmable(_))
+                        | (Counter::Fixed(_), Counter::Fixed(_))
+                )
             })
             .collect();
 
@@ -877,13 +877,13 @@ impl<'a, 'b> PerfEventGroup<'a, 'b> {
 
         // 4. Isolate things that have erratas to not screw other events (see HSW30)
         let errata = self.events.iter().any(|cur| cur.0.errata.is_some());
-        if errata || event.0.errata.is_some() && self.events.len() != 0 {
+        if errata || event.0.errata.is_some() && !self.events.is_empty() {
             return Err(AddEventError::ErrataConflict);
         }
 
         // 5. If an event has the taken alone attribute set it needs to be measured alone
         let already_have_taken_alone_event = self.events.iter().any(|cur| cur.0.taken_alone);
-        if already_have_taken_alone_event || event.0.taken_alone && self.events.len() != 0 {
+        if already_have_taken_alone_event || event.0.taken_alone && !self.events.is_empty() {
             return Err(AddEventError::TakenAloneConflict);
         }
 
@@ -892,7 +892,8 @@ impl<'a, 'b> PerfEventGroup<'a, 'b> {
             ISOLATE_EVENTS.iter().any(|cur| *cur == e.0.event_name)
         });
         if already_have_isolated_event
-            || ISOLATE_EVENTS.iter().any(|cur| *cur == event.0.event_name) && self.events.len() != 0
+            || ISOLATE_EVENTS.iter().any(|cur| *cur == event.0.event_name)
+                && !self.events.is_empty()
         {
             return Err(AddEventError::IsolatedEventConflict);
         }
@@ -911,7 +912,7 @@ impl<'a, 'b> PerfEventGroup<'a, 'b> {
         for event in self.events.iter() {
             let (devices, mut configs) = event.perf_configs();
 
-            if devices.len() == 0 || configs.len() == 0 {
+            if devices.is_empty() || configs.is_empty() {
                 error!(
                     "Event {} supported by hardware, but your Linux does not allow you to measure it (available PMU devices = {:?})",
                     event, devices
@@ -1010,12 +1011,9 @@ where
 
         let perf_event: PerfEvent = PerfEvent(event);
         let mut added: Result<(), AddEventError> = Err(AddEventError::ErrataConflict);
-        match perf_event.unit() {
-            MonitoringUnit::Unknown => {
-                info!("Ignoring event with unknown unit '{}'", event);
-                continue;
-            }
-            _ => (),
+        if perf_event.unit() == MonitoringUnit::Unknown {
+            info!("Ignoring event with unknown unit '{}'", event);
+            continue;
         };
 
         // Try to add the event to an existing group:
@@ -1028,21 +1026,19 @@ where
         }
 
         // Unable to add event to any existing group, make a new group instead:
-        if !added.is_ok() {
+        if added.is_err() {
             let mut pg = PerfEventGroup::new(&*PMU_COUNTERS);
             let perf_event: PerfEvent = PerfEvent(event);
 
             let added = pg.add_event(perf_event);
-            match added {
-                Err(e) => {
-                    let perf_event: PerfEvent = PerfEvent(event);
-                    panic!(
-                        "Can't add a new event {:?} to an empty group: {:?}",
-                        perf_event, e
-                    );
-                }
-                Ok(_) => (),
-            };
+
+            if let Err(e) = added {
+                let perf_event: PerfEvent = PerfEvent(event);
+                panic!(
+                    "Can't add a new event {:?} to an empty group: {:?}",
+                    perf_event, e
+                );
+            }
 
             groups.push(pg);
         }
@@ -1055,8 +1051,8 @@ where
 pub fn get_perf_command(
     cmd_working_dir: &str,
     _output_path: &Path,
-    env: &Vec<(String, String)>,
-    breakpoints: &Vec<String>,
+    env: &[(String, String)],
+    breakpoints: &[String],
     record: bool,
 ) -> Command {
     let mut perf = Command::new("perf");
@@ -1088,6 +1084,7 @@ pub fn get_perf_command(
     perf
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn profile<'a, 'b>(
     output_path: &Path,
     cmd_working_dir: &str,
@@ -1126,14 +1123,14 @@ pub fn profile<'a, 'b>(
             std::process::exit(3);
         }
 
-        let _ = save_numa_topology(&output_path).expect("Can't save NUMA topology");
-        let _ = save_cpu_topology(&output_path).expect("Can't save CPU topology");
-        let _ = save_lstopo(&output_path).expect("Can't save lstopo information");
-        let _ = save_cpuid(&output_path).expect("Can't save CPUID information");
-        let _ = save_likwid_topology(&output_path).expect("Can't save likwid information");
+        let _ = save_numa_topology(output_path).expect("Can't save NUMA topology");
+        let _ = save_cpu_topology(output_path).expect("Can't save CPU topology");
+        let _ = save_lstopo(output_path).expect("Can't save lstopo information");
+        let _ = save_cpuid(output_path).expect("Can't save CPUID information");
+        let _ = save_likwid_topology(output_path).expect("Can't save likwid information");
     }
 
-    assert!(cmd.len() >= 1);
+    assert!(!cmd.is_empty());
     let mut perf_log = PathBuf::new();
     perf_log.push(output_path);
     perf_log.push("perf.csv");
@@ -1155,7 +1152,7 @@ pub fn profile<'a, 'b>(
     let record_path = Path::new("/dev/null");
     let mut perf = get_perf_command(cmd_working_dir, output_path, &env, &breakpoints, record);
     perf.arg("-n"); // null run - don’t start any counters
-    let (_, _, _) = execute_perf(&mut perf, &cmd, &Vec::new(), &record_path, dryrun);
+    let (_, _, _) = execute_perf(&mut perf, &cmd, &Vec::new(), record_path, dryrun);
     debug!("Warmup complete, let's start measuring.");
 
     let mut pb = ProgressBar::new(event_groups.len() as u64);

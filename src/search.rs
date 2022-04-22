@@ -1,12 +1,8 @@
-use std;
-
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-
-use csv;
 
 use super::profile;
 use super::profile::{MonitoringUnit, PerfEvent};
@@ -14,38 +10,34 @@ use log::*;
 use x86::perfcnt::intel::{Counter, EventDescription, MSRIndex, PebsType, Tuple};
 
 pub fn event_is_documented(
-    events: &Vec<PerfEvent>,
+    events: &[PerfEvent],
     unit: MonitoringUnit,
     code: u8,
     umask: u8,
 ) -> bool {
-    for event in events.iter() {
-        if event.unit() == unit && event.uses_event_code(code) && event.uses_umask(umask) {
-            return true;
-        }
-    }
-
-    return false;
+    events
+        .iter()
+        .any(|event| event.unit() == unit && event.uses_event_code(code) && event.uses_umask(umask))
 }
 
 fn execute_perf(
     perf: &mut Command,
-    cmd: &Vec<String>,
-    counters: &Vec<String>,
+    cmd: &[String],
+    counters: &[String],
 ) -> BTreeSet<(String, String)> {
-    assert!(cmd.len() >= 1);
+    assert!(!cmd.is_empty());
     let events: Vec<String> = counters.iter().map(|c| format!("-e {}", c)).collect();
 
     let perf = perf.args(events.as_slice());
-    let perf = perf.args(cmd.as_slice());
-    let perf_cmd_str: String = format!("{:?}", perf).replace("\"", "");
+    let perf = perf.args(cmd);
+    let perf_cmd_str: String = format!("{:?}", perf).replace('"', "");
 
     let (_stdout, stderr) = match perf.output() {
         Ok(out) => {
-            let stdout =
-                String::from_utf8(out.stdout).unwrap_or(String::from("Unable to read stdout!"));
-            let stderr =
-                String::from_utf8(out.stderr).unwrap_or(String::from("Unable to read stderr!"));
+            let stdout = String::from_utf8(out.stdout)
+                .unwrap_or_else(|_| "Unable to read stdout!".to_string());
+            let stderr = String::from_utf8(out.stderr)
+                .unwrap_or_else(|_| "Unable to read stderr!".to_string());
 
             if out.status.success() {
                 // debug!("stdout:\n{:?}", stdout);
@@ -73,35 +65,32 @@ fn execute_perf(
         .delimiter(b';')
         .flexible(true)
         .from_reader(stderr.as_bytes());
-    for record in rdr.deserialize() {
-        if record.is_ok() {
-            type SourceRow = (f64, String, String, String, String, String, f64);
-            let (_time, _cpu, value_string, _, event, _, _percent): SourceRow =
-                record.expect("Should not happen (in is_ok() branch)!");
+    type SourceRow = (f64, String, String, String, String, String, f64);
+    for (_time, _cpu, value_string, _, event, _, _percent) in
+        rdr.deserialize::<SourceRow>().flatten()
+    {
+        // Perf will just report first CPU on the socket for uncore events,
+        // so we temporarily encode the location in the event name and
+        // extract it here again:
+        let (unit, event_name) = if !event.starts_with("uncore_") {
+            // Normal case, we just take the regular event and cpu fields from perf stat
+            (String::from("cpu"), String::from(event.trim()))
+        } else {
+            // Uncore events, use first part of the event name as the location
+            let (unit, name) = event.split_at(event.find('.').unwrap());
+            // remove the _1 in uncore_cbox_1:
+            let mut unit_parts: Vec<&str> = unit.split('_').collect();
+            unit_parts.pop();
+            (
+                unit_parts.join("_"),
+                name.trim_start_matches('.').trim().to_string(),
+            )
+        };
 
-            // Perf will just report first CPU on the socket for uncore events,
-            // so we temporarily encode the location in the event name and
-            // extract it here again:
-            let (unit, event_name) = if !event.starts_with("uncore_") {
-                // Normal case, we just take the regular event and cpu fields from perf stat
-                (String::from("cpu"), String::from(event.trim()))
-            } else {
-                // Uncore events, use first part of the event name as the location
-                let (unit, name) = event.split_at(event.find(".").unwrap());
-                // remove the _1 in uncore_cbox_1:
-                let mut unit_parts: Vec<&str> = unit.split('_').collect();
-                unit_parts.pop();
-                (
-                    String::from(unit_parts.join("_")),
-                    String::from(name.trim_start_matches(".").trim()),
-                )
-            };
-
-            let value: u64 = value_string.trim().parse().unwrap_or(0);
-            if value != 0 {
-                debug!("{:?} {:?} {:?}", unit, event_name, value);
-                found_events.insert((event_name, unit));
-            }
+        let value: u64 = value_string.trim().parse().unwrap_or(0);
+        if value != 0 {
+            debug!("{:?} {:?} {:?}", unit, event_name, value);
+            found_events.insert((event_name, unit));
         }
     }
 
@@ -131,7 +120,7 @@ where
         std::process::exit(3);
     }
 
-    assert!(cmd.len() >= 1);
+    assert!(!cmd.is_empty());
     let mut perf_log = PathBuf::new();
     perf_log.push(output_path);
     perf_log.push("unknown_events.csv");
@@ -151,7 +140,7 @@ where
 
 pub fn print_unknown_events() {
     let events = profile::get_known_events();
-    let pevents: Vec<PerfEvent> = events.into_iter().map(|e| PerfEvent(e)).collect();
+    let pevents: Vec<PerfEvent> = events.into_iter().map(PerfEvent).collect();
     let units = vec![
         MonitoringUnit::CPU,
         //MonitoringUnit::UBox,
@@ -249,7 +238,7 @@ pub fn print_unknown_events() {
             events.iter().collect(),
         );
         for &(ref name, ref unit) in all_found_events.iter() {
-            let splitted: Vec<&str> = name.split("_").collect();
+            let splitted: Vec<&str> = name.split('_').collect();
             let r = wtr.serialize(vec![
                 unit,
                 &String::from(splitted[2]),

@@ -1,6 +1,5 @@
 #![allow(unused)]
 
-use csv;
 use log::error as lerror;
 use log::*;
 use nom::*;
@@ -58,7 +57,7 @@ named!(parse_numactl_size<&[u8], NodeInfo>,
     )
 );
 
-fn get_node_info(node: Node, numactl_output: &String) -> Option<NodeInfo> {
+fn get_node_info(node: Node, numactl_output: &str) -> Option<NodeInfo> {
     let find_prefix = format!("node {} size:", node);
     for line in numactl_output.split('\n') {
         if line.starts_with(find_prefix.as_str()) {
@@ -110,8 +109,8 @@ fn save_file(
         let mut out_file: PathBuf = output_path.to_path_buf();
         out_file.push(file);
         let mut f = File::create(out_file.as_path())?;
-        let content = String::from_utf8(out.stdout).unwrap_or(String::new());
-        f.write(content.as_bytes())?;
+        let content = String::from_utf8(out.stdout).unwrap_or_default();
+        f.write_all(content.as_bytes())?;
         Ok(content)
     } else {
         lerror!(
@@ -121,7 +120,7 @@ fn save_file(
         );
         debug!(
             "stderr:\n{}",
-            String::from_utf8(out.stderr).unwrap_or("Can't parse output".to_string())
+            String::from_utf8(out.stderr).unwrap_or_else(|_| "Can't parse output".to_string())
         );
         unreachable!()
     }
@@ -166,10 +165,10 @@ impl MachineTopology {
             .arg("--parse=NODE,SOCKET,CORE,CPU,CACHE")
             .output()
             .unwrap();
-        let lscpu_string = String::from_utf8(lscpu_out.stdout).unwrap_or(String::new());
+        let lscpu_string = String::from_utf8(lscpu_out.stdout).unwrap_or_default();
 
         let numactl_out = Command::new("numactl").arg("--hardware").output().unwrap();
-        let numactl_string = String::from_utf8(numactl_out.stdout).unwrap_or(String::new());
+        let numactl_string = String::from_utf8(numactl_out.stdout).unwrap_or_default();
 
         MachineTopology::from_strings(lscpu_string, numactl_string)
     }
@@ -189,7 +188,7 @@ impl MachineTopology {
     pub fn from_strings(lscpu_output: String, numactl_output: String) -> MachineTopology {
         let no_comments = lscpu_output
             .split('\n')
-            .filter(|s| s.trim().len() > 0 && !s.trim().starts_with("#"))
+            .filter(|s| !s.trim().is_empty() && !s.trim().starts_with('#'))
             .collect::<Vec<&str>>()
             .join("\n");
 
@@ -206,14 +205,14 @@ impl MachineTopology {
         for row in rows {
             let caches: Vec<u64> = row
                 .4
-                .split(":")
+                .split(':')
                 .map(|s| u64::from_str(s).unwrap())
                 .collect();
             assert_eq!(caches.len(), 4);
             let node: NodeInfo =
                 get_node_info(row.0, &numactl_output).expect("Can't find node in numactl output?");
             let tuple: CpuInfo = CpuInfo {
-                node: node,
+                node,
                 socket: row.1,
                 core: row.2,
                 cpu: row.3,
@@ -224,12 +223,12 @@ impl MachineTopology {
             data.push(tuple);
         }
 
-        MachineTopology { data: data }
+        MachineTopology { data }
     }
 
     pub fn cpus(&self) -> Vec<Cpu> {
         let mut cpus: Vec<Cpu> = self.data.iter().map(|t| t.cpu).collect();
-        cpus.sort();
+        cpus.sort_unstable();
         cpus.dedup();
         cpus
     }
@@ -240,21 +239,21 @@ impl MachineTopology {
 
     pub fn cores(&self) -> Vec<Core> {
         let mut cores: Vec<Core> = self.data.iter().map(|t| t.core).collect();
-        cores.sort();
+        cores.sort_unstable();
         cores.dedup();
         cores
     }
 
     pub fn sockets(&self) -> Vec<Socket> {
         let mut sockets: Vec<Cpu> = self.data.iter().map(|t| t.socket).collect();
-        sockets.sort();
+        sockets.sort_unstable();
         sockets.dedup();
         sockets
     }
 
     pub fn nodes(&self) -> Vec<NodeInfo> {
         let mut nodes: Vec<NodeInfo> = self.data.iter().map(|t| t.node).collect();
-        nodes.sort();
+        nodes.sort_unstable();
         nodes.dedup();
         nodes
     }
@@ -265,7 +264,7 @@ impl MachineTopology {
 
     pub fn l1(&self) -> Vec<L1> {
         let mut l1: Vec<L1> = self.data.iter().map(|t| t.l1).collect();
-        l1.sort();
+        l1.sort_unstable();
         l1.dedup();
         l1
     }
@@ -285,7 +284,7 @@ impl MachineTopology {
 
     pub fn l2(&self) -> Vec<L2> {
         let mut l2: Vec<L2> = self.data.iter().map(|t| t.l2).collect();
-        l2.sort();
+        l2.sort_unstable();
         l2.dedup();
         l2
     }
@@ -305,7 +304,7 @@ impl MachineTopology {
 
     pub fn l3(&self) -> Vec<L3> {
         let mut l3: Vec<L3> = self.data.iter().map(|t| t.l3).collect();
-        l3.sort();
+        l3.sort_unstable();
         l3.dedup();
         l3
     }
@@ -354,7 +353,7 @@ impl MachineTopology {
             .filter(|c| c.socket == socket)
             .map(|c| c.core)
             .collect();
-        cores.sort();
+        cores.sort_unstable();
         cores.dedup();
         cores
     }

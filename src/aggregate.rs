@@ -1,4 +1,3 @@
-use csv;
 use log::*;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -11,7 +10,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
-use toml;
 
 use crate::util::*;
 
@@ -19,7 +17,7 @@ use perfcnt::linux::perf_file::PerfFile;
 use perfcnt::linux::perf_format::{EventData, EventDesc, EventType};
 
 // I have no idea if the perf format guarantees that events appear always in the same order :S
-fn verify_events_in_order(events: &Vec<EventDesc>, values: &Vec<(u64, Option<u64>)>) -> bool {
+fn verify_events_in_order(events: &[EventDesc], values: &[(u64, Option<u64>)]) -> bool {
     for (idx, v) in values.iter().enumerate() {
         // Don't have id's we can't veryify anything
         if v.1.is_none() {
@@ -36,17 +34,17 @@ fn verify_events_in_order(events: &Vec<EventDesc>, values: &Vec<(u64, Option<u64
         }
     }
 
-    return true;
+    true
 }
 
 /// Extracts the perf stat file and writes it to a CSV file that looks like this:
 /// "EVENT_NAME", "TIME", "SOCKET", "CORE", "CPU", "NODE", "UNIT", "SAMPLE_VALUE"
 fn parse_perf_csv_file(
     mt: &MachineTopology,
-    cpus: &Vec<&CpuInfo>,
+    cpus: &[&CpuInfo],
     cpu_filter: Filter,
-    sockets: &Vec<Socket>,
-    breakpoints: &Vec<String>,
+    sockets: &[Socket],
+    breakpoints: &[String],
     path: &Path,
     writer: &mut csv::Writer<File>,
 ) -> io::Result<()> {
@@ -62,7 +60,7 @@ fn parse_perf_csv_file(
 
     // All the sockets this program is running on:
     let mut all_sockets: Vec<Socket> = cpus.iter().map(|c| c.socket).collect();
-    all_sockets.sort();
+    all_sockets.sort_unstable();
     all_sockets.dedup();
 
     // Timestamps for filtering start and end:
@@ -75,12 +73,9 @@ fn parse_perf_csv_file(
         .flexible(true)
         .from_path(path)
         .unwrap();
-    for record in rdr.deserialize() {
-        if record.is_ok() {
-            type SourceRow = (f64, String, String, String, String, String, f64);
-            let (time, cpu, value_string, _, event, _, percent): SourceRow =
-                record.expect("Should not happen (in is_ok() branch)!");
-
+    type SourceRow = (f64, String, String, String, String, String, f64);
+    for record in rdr.deserialize::<SourceRow>() {
+        if let Ok((time, cpu, value_string, _, event, _, percent)) = record {
             // Perf will just report first CPU on the socket for uncore events,
             // so we temporarily encode the location in the event name and
             // extract it here again:
@@ -89,10 +84,10 @@ fn parse_perf_csv_file(
                 (String::from("cpu"), String::from(event.trim()))
             } else {
                 // Uncore events, use first part of the event name as the location
-                let (unit, name) = event.split_at(event.find(".").unwrap());
+                let (unit, name) = event.split_at(event.find('.').unwrap());
                 (
                     String::from(unit),
-                    String::from(name.trim_start_matches(".").trim()),
+                    String::from(name.trim_start_matches('.').trim()),
                 )
             };
 
@@ -110,7 +105,7 @@ fn parse_perf_csv_file(
                 continue;
             }
 
-            let cpu_nr = match u64::from_str(&cpu[3..].trim()) {
+            let cpu_nr = match u64::from_str(cpu[3..].trim()) {
                 Ok(v) => v,
                 Err(_e) => {
                     error!(
@@ -153,11 +148,11 @@ fn parse_perf_csv_file(
                 continue;
             }
 
-            let value = u64::from_str(value_string.trim()).expect(
-                format!("Parsed string '{}' should be a value by now!", value_string).as_str(),
-            );
+            let value = u64::from_str(value_string.trim()).unwrap_or_else(|_| {
+                panic!("Parsed string '{}' should be a value by now!", value_string)
+            });
 
-            if breakpoints.len() >= 1
+            if !breakpoints.is_empty()
                 && value == 1
                 && event_name.ends_with(breakpoints[0].as_str())
                 && cpus.iter().any(|c| c.cpu == cpu_nr)
@@ -211,7 +206,7 @@ fn parse_perf_csv_file(
             };
         }
     }
-    if breakpoints.len() >= 1 && start.is_none() {
+    if !breakpoints.is_empty() && start.is_none() {
         error!(
             "{:?}: We did not find a trigger for start breakpoint ({:?})",
             path.as_os_str(),
@@ -478,7 +473,7 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
 
     // All the sockets this program is running on:
     let mut all_sockets: Vec<Socket> = all_cpus.iter().map(|c| c.socket).collect();
-    all_sockets.sort();
+    all_sockets.sort_unstable();
     all_sockets.dedup();
 
     let uncore_filter = Filter::new(uncore_filter);
@@ -492,9 +487,9 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
                 let socket_set: HashSet<Cpu> =
                     mt.cpus_on_socket(socket).iter().map(|c| c.cpu).collect();
                 let program_set: HashSet<Cpu> = all_cpus.iter().map(|c| c.cpu).collect();
-                let diff: Vec<Cpu> = socket_set.difference(&program_set).cloned().collect();
+                let diff = socket_set.difference(&program_set);
 
-                if diff.len() == 0 {
+                if diff.count() == 0 {
                     debug!(
                         "Uncore from socket {:?} considered since A uses it exclusively.",
                         socket
@@ -548,7 +543,7 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
     // Write content in result.csv
     for row in rows {
         let (_, event_names, _, _, file, _) = row;
-        let _string_names: Vec<&str> = event_names.split(",").collect();
+        let _string_names: Vec<&str> = event_names.split(',').collect();
 
         let mut perf_data = path.to_owned();
         perf_data.push(&file);
@@ -559,7 +554,7 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
         match file_ext.to_str().unwrap() {
             "data" => parse_perf_file(
                 perf_data.as_path(),
-                event_names.split(",").collect(),
+                event_names.split(',').collect(),
                 &mut wrtr,
             )
             .unwrap(),

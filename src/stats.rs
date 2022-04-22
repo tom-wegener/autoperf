@@ -1,4 +1,3 @@
-use csv;
 use itertools::Itertools;
 use phf::Map;
 use std::cmp::Ord;
@@ -28,16 +27,16 @@ fn save_event_counts(key_to_name: &ArchitectureMap, csv_result: &Path) {
             "counters",
             "uncore groups",
         ])
-        .expect(format!("Can't write {:?} header", csv_result).as_str());
+        .unwrap_or_else(|_| panic!("Can't write {:?} header", csv_result));
 
     for (key, &(name, year, counters)) in key_to_name.iter() {
-        let events = COUNTER_MAP.get(format!("{}", key).as_str());
+        let events = COUNTER_MAP.get(key);
 
         let counter_groups: Vec<(MonitoringUnit, usize)> = events.map_or(Vec::new(), |uc| {
             let mut units: Vec<(MonitoringUnit, PerfEvent)> = Vec::with_capacity(uc.len());
-            for ref e in uc.values() {
+            for e in uc.values() {
                 if e.uncore {
-                    units.push((PerfEvent(&e).unit(), PerfEvent(&e)));
+                    units.push((PerfEvent(e).unit(), PerfEvent(e)));
                 }
             }
             units.sort_by(|a, b| a.0.cmp(&b.0));
@@ -51,16 +50,10 @@ fn save_event_counts(key_to_name: &ArchitectureMap, csv_result: &Path) {
         });
 
         let cc_count = events
-            .map(|c| {
-                let filtered: Vec<&EventDescription> = c.values().filter(|e| !e.uncore).collect();
-                filtered.len()
-            })
+            .map(|c| c.values().filter(|e| !e.uncore).count())
             .unwrap_or(0);
         let uc_count = events
-            .map(|c| {
-                let filtered: Vec<&EventDescription> = c.values().filter(|e| e.uncore).collect();
-                filtered.len()
-            })
+            .map(|c| c.values().filter(|e| e.uncore).count())
             .unwrap_or(0);
 
         let group_string = counter_groups
@@ -70,17 +63,18 @@ fn save_event_counts(key_to_name: &ArchitectureMap, csv_result: &Path) {
         let cc_count = cc_count.to_string();
         let uc_count = uc_count.to_string();
 
-        let mut row: Vec<&str> = Vec::new();
-        row.push(year);
-        row.push(name);
-        row.push(cc_count.as_str());
-        row.push(uc_count.as_str());
-        row.push(counters);
-        row.push(group_string.as_str());
+        let row = vec![
+            year,
+            name,
+            cc_count.as_str(),
+            uc_count.as_str(),
+            counters,
+            group_string.as_str(),
+        ];
 
         writer
             .serialize(&row.as_slice())
-            .expect(format!("Can't write for for {:?} file", csv_result).as_str());
+            .unwrap_or_else(|_| panic!("Can't write for for {:?} file", csv_result));
     }
 }
 
@@ -106,7 +100,7 @@ fn common_event_names(a: Option<&'static EventMap>, b: Option<&'static EventMap>
 /// Does pairwise comparison of all architectures and saves their shared events to a file.
 fn save_architecture_comparison(key_to_name: &ArchitectureMap, csv_result: &Path) {
     let mut writer = csv::Writer::from_path(csv_result)
-        .expect(format!("Can't write {:?} file", csv_result).as_str());
+        .unwrap_or_else(|_| panic!("Can't write {:?} file", csv_result));
     writer
         .serialize(&[
             "arch1",
@@ -117,12 +111,12 @@ fn save_architecture_comparison(key_to_name: &ArchitectureMap, csv_result: &Path
             "arch1 events",
             "arch2 events",
         ])
-        .expect(format!("Can't write {:?} header", csv_result).as_str());
+        .unwrap_or_else(|_| panic!("Can't write {:?} header", csv_result));
 
     for (key1, &(name1, year1, _)) in key_to_name.iter() {
         for (key2, &(name2, year2, _)) in key_to_name.iter() {
-            let events1 = COUNTER_MAP.get(format!("{}", key1).as_str());
-            let events2 = COUNTER_MAP.get(format!("{}", key2).as_str());
+            let events1 = COUNTER_MAP.get(key1);
+            let events2 = COUNTER_MAP.get(key2);
 
             writer
                 .serialize(&[
@@ -158,6 +152,7 @@ fn edit_distance(a: &str, b: &str) -> i32 {
     }
 
     for i in 0..len_a {
+        #[allow(clippy::needless_range_loop)]
         for j in 0..len_b {
             let ind: i32 = if chars_a[i] == chars_b[j] { 0 } else { 1 };
 
@@ -223,13 +218,13 @@ fn save_edit_distances(key_to_name: &ArchitectureMap, output_dir: &Path) {
             csv_result.push(format!("editdist_{}-vs-{}.csv", name1, name2));
 
             let mut writer = csv::Writer::from_path(csv_result.clone())
-                .expect(format!("Can't open {:?}", csv_result).as_str());
+                .unwrap_or_else(|_| panic!("Can't open {:?}", csv_result));
             writer
                 .serialize(&["event name", "edit distance", "uncore", "desc1", "desc2"])
-                .expect(format!("Can't write {:?} header", csv_result).as_str());
+                .unwrap_or_else(|_| panic!("Can't write {:?} header", csv_result));
 
-            let events1 = COUNTER_MAP.get(format!("{}", key1).as_str());
-            let events2 = COUNTER_MAP.get(format!("{}", key2).as_str());
+            let events1 = COUNTER_MAP.get(key1);
+            let events2 = COUNTER_MAP.get(key2);
 
             common_event_desc_distance(&mut writer, events1, events2, false).ok();
         }
@@ -239,13 +234,13 @@ fn save_edit_distances(key_to_name: &ArchitectureMap, output_dir: &Path) {
 /// Dump information about performance events on your machine into the given directory.
 fn save_event_descriptions(output_path: &Path) {
     let events: &'static Map<&'static str, EventDescription<'static>> =
-        &x86::perfcnt::intel::events().expect("Can't get events for arch");
+        x86::perfcnt::intel::events().expect("Can't get events for arch");
     let pevents: Vec<PerfEvent> = events.into_iter().map(|e| PerfEvent(e.1)).collect();
 
     let mut storage_location = PathBuf::from(output_path);
     storage_location.push("ivytown_events.dat");
     let mut wtr = csv::Writer::from_path(storage_location.clone())
-        .expect(format!("Can't open {:?}", storage_location).as_str());
+        .unwrap_or_else(|_| panic!("Can't open {:?}", storage_location));
     let r = wtr.serialize(("unit", "code", "mask", "event_name"));
     assert!(r.is_ok());
 

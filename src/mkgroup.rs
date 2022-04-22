@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use std::path::Path;
 
-use csv;
 use phf::Map;
 
 use super::profile::{MonitoringUnit, PerfEvent, PerfEventGroup};
@@ -10,8 +9,8 @@ use log::*;
 use x86::perfcnt::intel::{events, EventDescription};
 
 pub fn mkgroup(ranking_file: &Path) {
-    let core_counter: &'static Map<&'static str, EventDescription<'static>> = &events().unwrap();
-    let uncore_counter: &'static Map<&'static str, EventDescription<'static>> = &events().unwrap();
+    let core_counter: &'static Map<&'static str, EventDescription<'static>> = events().unwrap();
+    let uncore_counter: &'static Map<&'static str, EventDescription<'static>> = events().unwrap();
 
     let mut res = HashMap::with_capacity(11);
     res.insert(MonitoringUnit::CPU, 4);
@@ -51,14 +50,15 @@ pub fn mkgroup(ranking_file: &Path) {
     for row in rdr.deserialize() {
         let (_, _, feature_name, _, _, _, _, _, _, _): OutputRow = row.unwrap();
         // println!("{:?}", feature_name);
-        let splits: Vec<&str> = feature_name.splitn(2, ".").collect();
+        let splits: Vec<&str> = feature_name.splitn(2, '.').collect();
         let event_name = String::from(splits[1]);
-        let feature_name = String::from(feature_name.clone());
+        let feature_name = feature_name.clone();
 
         let maybe_e: Option<&'static EventDescription> = core_counter.get(event_name.as_str());
 
         // If we already measure the event, just return it (in case a feature shows up with AVG. and
         // STD.)
+        #[allow(clippy::map_entry)]
         if events_added.contains_key(&event_name) {
             println!("{}", feature_name);
         } else {

@@ -75,7 +75,7 @@ fn main() {
             input_directory,
             core_filter,
             uncore_filter,
-            &output_path.as_path(),
+            output_path.as_path(),
         );
     }
     if let Some(matches) = matches.subcommand_matches("pair") {

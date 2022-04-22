@@ -17,7 +17,6 @@ use std::time::Duration;
 use wait_timeout::ChildExt;
 
 use log::*;
-use toml;
 
 use super::profile;
 use super::util::*;
@@ -38,7 +37,7 @@ fn get_hostname() -> Option<String> {
 
     // find the first 0 byte (i.e. just after the data that gethostname wrote)
     let actual_len = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
-    let c_str: Vec<u8> = buf[..actual_len].into_iter().map(|i| *i as u8).collect();
+    let c_str: Vec<u8> = buf[..actual_len].iter().map(|i| *i as u8).collect();
 
     Some(String::from_utf8(c_str).unwrap())
 }
@@ -62,7 +61,7 @@ impl<'a> Deployment<'a> {
             description: desc,
             a: half_a,
             b: half_b,
-            mem: mem,
+            mem,
         }
     }
 
@@ -99,7 +98,7 @@ impl<'a> Deployment<'a> {
 
         let mut cores: Vec<Core> = cpus.iter().map(|c| c.core).collect();
         assert!(cores.len() % 2 == 0);
-        cores.sort();
+        cores.sort_unstable();
         cores.dedup();
 
         let mut upper_half: Vec<&CpuInfo> = Vec::with_capacity(cpus_len / 2);
@@ -132,7 +131,7 @@ impl<'a> Deployment<'a> {
 
         let mut l3s: Vec<L3> = cpus.iter().map(|c| c.l3).collect();
         assert!(l3s.len() % 2 == 0);
-        l3s.sort();
+        l3s.sort_unstable();
         l3s.dedup();
 
         let mut upper_half: Vec<&CpuInfo> = Vec::with_capacity(cpus_len / 2);
@@ -159,12 +158,12 @@ impl<'a> fmt::Display for Deployment<'a> {
         let a: Vec<Cpu> = self.a.iter().map(|c| c.cpu).collect();
         let b: Vec<Cpu> = self.b.iter().map(|c| c.cpu).collect();
 
-        write!(f, "Deployment Plan for {}:\n", self.description)?;
-        write!(f, "-- Program A cores: {:?}\n", a)?;
-        write!(f, "-- Program B cores: {:?}\n", b)?;
-        write!(f, "-- Use memory:\n")?;
+        writeln!(f, "Deployment Plan for {}:", self.description)?;
+        writeln!(f, "-- Program A cores: {:?}", a)?;
+        writeln!(f, "-- Program B cores: {:?}", b)?;
+        writeln!(f, "-- Use memory:")?;
         for n in self.mem.iter() {
-            write!(f, " - On node {}: {} Bytes\n", n.node, n.memory)?;
+            writeln!(f, " - On node {}: {} Bytes", n.node, n.memory)?;
         }
         Ok(())
     }
@@ -289,24 +288,24 @@ impl<'a> Program<'a> {
         });
 
         Program {
-            name: name,
-            manifest_path: manifest_path,
-            binary: binary,
+            name,
+            manifest_path,
+            binary,
             is_openmp: openmp,
             is_parsec: parsec,
-            env: env,
-            alone: alone,
-            working_dir: working_dir,
+            env,
+            alone,
+            working_dir,
             use_watch_repeat: watch_repeat,
-            args: args,
-            antagonist_args: antagonist_args,
-            breakpoints: breakpoints,
+            args,
+            antagonist_args,
+            breakpoints,
             // TODO: this is currently not in use (remove?)
-            checkpoints: checkpoints,
+            checkpoints,
         }
     }
 
-    fn get_cmd(&self, antagonist: bool, cores: &Vec<&CpuInfo>) -> Vec<String> {
+    fn get_cmd(&self, antagonist: bool, cores: &[&CpuInfo]) -> Vec<String> {
         let nthreads = cores.len();
         let mut cmd = vec![&self.binary];
 
@@ -318,16 +317,11 @@ impl<'a> Program<'a> {
 
         cmd.iter()
             .map(|s| s.replace("$NUM_THREADS", format!("{}", nthreads).as_str()))
-            .map(|s| {
-                s.replace(
-                    "$MANIFEST_DIR",
-                    format!("{}", self.manifest_path.to_str().unwrap()).as_str(),
-                )
-            })
+            .map(|s| s.replace("$MANIFEST_DIR", self.manifest_path.to_str().unwrap()))
             .collect()
     }
 
-    fn get_env(&self, antagonist: bool, cores: &Vec<&CpuInfo>) -> Vec<(String, String)> {
+    fn get_env(&self, antagonist: bool, cores: &[&CpuInfo]) -> Vec<(String, String)> {
         let mut env: Vec<(String, String)> = Vec::with_capacity(2);
         let cpus: Vec<String> = cores.iter().map(|c| format!("{}", c.cpu)).collect();
         // TODO: remove this feature:
@@ -348,11 +342,8 @@ impl<'a> Program<'a> {
                     self.manifest_path.to_str().unwrap()
                 ),
             ));
-            env.push((String::from("PARSEC_CPU_NUM"), format!("{}", cpus.len())));
-            env.push((
-                String::from("PARSEC_CPU_BASE"),
-                format!("{}", cpus.join(",")),
-            ));
+            env.push((String::from("PARSEC_CPU_NUM"), cpus.len().to_string()));
+            env.push((String::from("PARSEC_CPU_BASE"), cpus.join(",")));
             if antagonist {
                 env.push((String::from("PARSEC_REPEAT"), String::from("1")));
             }
@@ -393,11 +384,11 @@ impl<'a> Run<'a> {
         }
 
         Run {
-            manifest_path: manifest_path,
+            manifest_path,
             output_path: out_dir,
-            a: a,
-            b: b,
-            deployment: deployment,
+            a,
+            b,
+            deployment,
         }
     }
 
@@ -483,11 +474,7 @@ impl<'a> Run<'a> {
         // Is this run already done (in case we restart):
         let mut completed_file: PathBuf = self.output_path.to_path_buf();
         completed_file.push("completed");
-        if completed_file.exists() {
-            true
-        } else {
-            false
-        }
+        completed_file.exists()
     }
 
     fn profile(&mut self) -> io::Result<()> {
@@ -556,19 +543,19 @@ impl<'a> Run<'a> {
 
 impl<'a> fmt::Display for Run<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
+        writeln!(
             f,
-            "A: ENV = {:?} CMD = {:?}\n",
+            "A: ENV = {:?} CMD = {:?}",
             self.a.get_env(false, &self.deployment.a),
             self.a.get_cmd(false, &self.deployment.a)
         )?;
-        write!(f, "A Breakpoints: {:?}\n", self.a.breakpoints)?;
-        write!(f, "A Checkpoints: {:?}\n", self.a.checkpoints)?;
+        writeln!(f, "A Breakpoints: {:?}", self.a.breakpoints)?;
+        writeln!(f, "A Checkpoints: {:?}", self.a.checkpoints)?;
         match self.b {
             Some(b) => {
-                write!(
+                writeln!(
                     f,
-                    "B: {:?} {:?}\n",
+                    "B: {:?} {:?}",
                     b.get_env(true, &self.deployment.b),
                     b.get_cmd(true, &self.deployment.b)
                 )?;
@@ -586,14 +573,14 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
     let canonical_manifest_path =
         fs::canonicalize(&manifest_folder).expect("canonicalize manifest path does not work");
 
-    let mut out_dir = canonical_manifest_path.to_path_buf();
-    let hostname = get_hostname().unwrap_or(String::from("unknown"));
+    let mut out_dir = canonical_manifest_path.clone();
+    let hostname = get_hostname().unwrap_or_else(|| "unknown".to_string());
     out_dir.push(hostname);
     mkdir(&out_dir);
 
     let mt = MachineTopology::new();
 
-    let mut manifest: PathBuf = canonical_manifest_path.to_path_buf();
+    let mut manifest: PathBuf = canonical_manifest_path.clone();
     manifest.push("manifest.toml");
     let mut file = File::open(manifest.as_path()).expect("manifest.toml file does not exist?");
     let mut manifest_string = String::new();
@@ -626,7 +613,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
         progs
             .as_array()
             .expect("Error in manifest.toml: 'profile_only_a' should be a list.")
-            .into_iter()
+            .iter()
             .map(|p| {
                 p.as_str()
                     .expect("profile_only_a elements should name programs (strings)")
@@ -638,7 +625,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
         progs
             .as_array()
             .expect("Error in manifest.toml: 'profile_only_b' should be a list.")
-            .into_iter()
+            .iter()
             .map(|p| {
                 p.as_str()
                     .expect("profile_only_b elements should name programs (strings)")
@@ -648,7 +635,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
     });
 
     let mut programs: Vec<Program> = Vec::with_capacity(2);
-    for (key, _value) in &doc {
+    for key in doc.keys() {
         if key.starts_with("program") {
             let program_desc: &toml::value::Table = doc[key]
                 .as_table()
@@ -724,7 +711,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
         let profile_a = profile_only
             .as_ref()
             .map_or(true, |ps| ps.contains(&a.name));
-        let profile_b = !b.is_none()
+        let profile_b = b.is_some()
             && profile_only_b
                 .as_ref()
                 .map_or(profile_a, |ps| ps.contains(&b.unwrap().name));
