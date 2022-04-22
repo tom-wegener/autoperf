@@ -11,7 +11,6 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Output};
-use std::str::{from_utf8_unchecked, FromStr};
 use x86::cpuid;
 
 pub type Node = u64;
@@ -30,16 +29,11 @@ pub fn mkdir(out_dir: &Path) {
     }
 }
 
-fn to_string(s: &[u8]) -> &str {
-    unsafe { from_utf8_unchecked(s) }
-}
-
-fn to_u64(s: &str) -> u64 {
-    FromStr::from_str(s).unwrap()
-}
-
 fn buf_to_u64(s: &[u8]) -> u64 {
-    to_u64(to_string(s))
+    std::str::from_utf8(s)
+        .expect("invalid number")
+        .parse()
+        .unwrap()
 }
 
 named!(parse_numactl_size<&[u8], NodeInfo>,
@@ -206,7 +200,7 @@ impl MachineTopology {
             let caches: Vec<u64> = row
                 .4
                 .split(':')
-                .map(|s| u64::from_str(s).unwrap())
+                .map(|s| s.parse::<u64>().unwrap())
                 .collect();
             assert_eq!(caches.len(), 4);
             let node: NodeInfo =
