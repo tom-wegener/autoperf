@@ -5,6 +5,7 @@ use itertools::*;
 use log::error as lerror;
 use log::*;
 use nom::*;
+use serde::Serialize;
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -70,7 +71,7 @@ fn get_node_info(node: Node, numactl_output: &String) -> Option<NodeInfo> {
     None
 }
 
-#[derive(Debug, Eq, PartialEq, RustcEncodable)]
+#[derive(Debug, Eq, PartialEq, Serialize)]
 pub struct CpuInfo {
     pub node: NodeInfo,
     pub socket: Socket,
@@ -88,7 +89,7 @@ impl CpuInfo {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, RustcEncodable)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Serialize)]
 pub struct NodeInfo {
     pub node: Node,
     pub memory: u64,
@@ -187,14 +188,20 @@ impl MachineTopology {
     }
 
     pub fn from_strings(lscpu_output: String, numactl_output: String) -> MachineTopology {
-        let no_comments: Vec<&str> = lscpu_output
+        let no_comments = lscpu_output
             .split('\n')
             .filter(|s| s.trim().len() > 0 && !s.trim().starts_with("#"))
-            .collect();
+            .collect::<Vec<&str>>()
+            .join("\n");
 
         type Row = (Node, Socket, Core, Cpu, String); // Online MHz
-        let mut rdr = csv::Reader::from_string(no_comments.join("\n")).has_headers(false);
-        let rows = rdr.decode().collect::<csv::Result<Vec<Row>>>().unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(no_comments.as_bytes());
+        let rows = rdr
+            .deserialize()
+            .collect::<csv::Result<Vec<Row>>>()
+            .unwrap();
 
         let mut data: Vec<CpuInfo> = Vec::with_capacity(rows.len());
         for row in rows {

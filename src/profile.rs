@@ -1,11 +1,10 @@
 use std;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use csv;
 use lazy_static::lazy_static;
 use pbr::ProgressBar;
 use std::error;
-use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::fs::File;
@@ -42,12 +41,12 @@ lazy_static! {
         let (family, model) = cpuid.get_feature_info().map_or((0,0), |fi| (fi.family_id(), ((fi.extended_model_id() as u8) << 4) | fi.model_id() as u8));
 
         let ctr_config = include_str!("counters.toml");
-        let mut parser = toml::Parser::new(ctr_config);
+        let doc = toml::from_str(ctr_config);
 
-        let doc = match parser.parse() {
-            Some(doc) => doc,
-            None => {
-                error!("Can't parse the counter configuration file:\n{:?}", parser.errors);
+        let doc: BTreeMap<String, toml::Value> = match doc {
+            Ok(doc) => doc,
+            Err(e) => {
+                error!("Can't parse the counter configuration file:\n{:?}", e);
                 std::process::exit(9);
             }
         };
@@ -57,7 +56,7 @@ lazy_static! {
         for (name, architecture) in doc {
             let architecture = architecture.as_table().expect("counters.toml architectures must be a table");
             let cfamily = &architecture["family"];
-            for cmodel in architecture["models"].as_slice().expect("counters.toml models must be a list.") {
+            for cmodel in architecture["models"].as_array().expect("counters.toml models must be a list.") {
                 let cfamily = cfamily.as_integer().expect("Family must be int.") as u8;
                 let cmodel = cmodel.as_integer().expect("Model must be int.") as u8;
                 if family == cfamily && model == cmodel {
@@ -1139,8 +1138,8 @@ pub fn profile<'a, 'b>(
     perf_log.push(output_path);
     perf_log.push("perf.csv");
 
-    let mut wtr = csv::Writer::from_file(perf_log).unwrap();
-    let r = wtr.encode((
+    let mut wtr = csv::Writer::from_path(perf_log).unwrap();
+    let r = wtr.serialize((
         "command",
         "event_names",
         "perf_events",
@@ -1181,7 +1180,7 @@ pub fn profile<'a, 'b>(
         let (executed_cmd, stdout, stdin) =
             execute_perf(&mut perf, &cmd, &counters, record_path.as_path(), dryrun);
         if !dryrun {
-            let r = wtr.encode(vec![
+            let r = wtr.serialize(vec![
                 cmd.join(" "),
                 event_names.join(","),
                 counters.join(","),
@@ -1261,7 +1260,7 @@ pub fn check_for_perf_permissions() -> bool {
         }
 
         Err(why) => {
-            error!("Couldn't read {}: {}", path.display(), why.description());
+            error!("Couldn't read {}: {:?}", path.display(), why);
             std::process::exit(3);
         }
     }
@@ -1300,7 +1299,7 @@ pub fn check_for_disabled_nmi_watchdog() -> bool {
         }
 
         Err(why) => {
-            error!("Couldn't read {}: {}", path.display(), why.description());
+            error!("Couldn't read {}: {:?}", path.display(), why);
             std::process::exit(4);
         }
     }
@@ -1338,7 +1337,7 @@ pub fn check_for_perf_paranoia() -> bool {
         }
 
         Err(why) => {
-            error!("Couldn't read {}: {}", path.display(), why.description());
+            error!("Couldn't read {}: {:?}", path.display(), why);
             std::process::exit(4);
         }
     };

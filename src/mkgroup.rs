@@ -40,14 +40,15 @@ pub fn mkgroup(ranking_file: &Path) {
         String,
         String,
     );
-    let mut rdr = csv::Reader::from_file(ranking_file)
-        .unwrap()
-        .has_headers(true);
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(ranking_file)
+        .unwrap();
     let mut events_added = HashMap::with_capacity(25);
 
     let mut group = PerfEventGroup::new(&res);
 
-    for row in rdr.decode() {
+    for row in rdr.deserialize() {
         let (_, _, feature_name, _, _, _, _, _, _, _): OutputRow = row.unwrap();
         // println!("{:?}", feature_name);
         let splits: Vec<&str> = feature_name.splitn(2, ".").collect();

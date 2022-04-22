@@ -68,11 +68,12 @@ fn execute_perf(
     };
 
     let mut found_events = BTreeSet::new();
-    let mut rdr = csv::Reader::from_string(stderr)
+    let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .delimiter(b';')
-        .flexible(true);
-    for record in rdr.decode() {
+        .flexible(true)
+        .from_reader(stderr.as_bytes());
+    for record in rdr.deserialize() {
         if record.is_ok() {
             type SourceRow = (f64, String, String, String, String, String, f64);
             let (_time, _cpu, value_string, _, event, _, _percent): SourceRow =
@@ -183,8 +184,8 @@ pub fn print_unknown_events() {
     let mut storage_location = PathBuf::from("unknown_events");
     profile::create_out_directory(&storage_location);
     storage_location.push("found_events.dat");
-    let mut wtr = csv::Writer::from_file(storage_location).unwrap();
-    let r = wtr.encode(("unit", "code", "mask", "event_name"));
+    let mut wtr = csv::Writer::from_path(storage_location).unwrap();
+    let r = wtr.serialize(("unit", "code", "mask", "event_name"));
     assert!(r.is_ok());
 
     let mut events = Vec::new();
@@ -249,7 +250,7 @@ pub fn print_unknown_events() {
         );
         for &(ref name, ref unit) in all_found_events.iter() {
             let splitted: Vec<&str> = name.split("_").collect();
-            let r = wtr.encode(vec![
+            let r = wtr.serialize(vec![
                 unit,
                 &String::from(splitted[2]),
                 &String::from(splitted[3]),

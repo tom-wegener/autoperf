@@ -1,5 +1,6 @@
 use csv;
 use log::*;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
@@ -68,12 +69,13 @@ fn parse_perf_csv_file(
     let mut start: Option<f64> = None;
     let mut end: Option<f64> = None;
 
-    let mut rdr = csv::Reader::from_file(path)
-        .unwrap()
+    let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .delimiter(b';')
-        .flexible(true);
-    for record in rdr.decode() {
+        .flexible(true)
+        .from_path(path)
+        .unwrap();
+    for record in rdr.deserialize() {
         if record.is_ok() {
             type SourceRow = (f64, String, String, String, String, String, f64);
             let (time, cpu, value_string, _, event, _, percent): SourceRow =
@@ -198,13 +200,14 @@ fn parse_perf_csv_file(
         } else {
             // Ignore lines that start with # (comments) but fail in case another
             // line can not be parsed:
-            match record.unwrap_err() {
-                csv::Error::Decode(s) => {
-                    if !s.starts_with("Failed converting '#") {
-                        panic!("Can't decode line {}.", s)
+            match record.unwrap_err().kind() {
+                csv::ErrorKind::Deserialize { pos: _, err } => {
+                    // TODO check if this works
+                    if !err.to_string().starts_with("Failed converting '#") {
+                        panic!("Can't decode line {}.", err)
                     }
                 }
-                e => panic!("Unrecoverable error {} while decoding.", e),
+                e => panic!("Unrecoverable error {:?} while decoding.", e),
             };
         }
     }
@@ -299,7 +302,7 @@ fn parse_perf_csv_file(
         }
 
         writer
-            .encode(&[
+            .serialize(&[
                 event_name.as_str(),
                 format!("{}", *time_to_index.get(&time).unwrap()).as_str(),
                 time.as_str(),
@@ -367,7 +370,7 @@ fn parse_perf_file(
                     let sample_value = format!("{}", event_count);
 
                     writer
-                        .encode(&[name, time.as_str(), cpu.as_str(), sample_value.as_str()])
+                        .serialize(&[name, time.as_str(), cpu.as_str(), sample_value.as_str()])
                         .unwrap();
                 }
             }
@@ -417,19 +420,19 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
         let mut file = File::open(run_config.as_path()).expect("run.toml file does not exist?");
         let mut run_string = String::new();
         let _ = file.read_to_string(&mut run_string).unwrap();
-        let mut parser = toml::Parser::new(run_string.as_str());
-        let doc = match parser.parse() {
-            Some(doc) => doc,
-            None => {
-                error!("Can't parse the run.toml file:\n{:?}", parser.errors);
+        let doc = toml::from_str(&run_string);
+        let doc: BTreeMap<String, toml::Value> = match doc {
+            Ok(doc) => doc,
+            Err(e) => {
+                error!("Can't parse the run.toml file:\n{:?}", e);
                 process::exit(3);
             }
         };
 
-        let a: &toml::Table = doc["a"]
+        let a: &toml::value::Table = doc["a"]
             .as_table()
             .expect("run.toml: 'a' should be a table.");
-        let deployment: &toml::Table = doc
+        let deployment: &toml::value::Table = doc
             .get("deployment")
             .expect("deployment?")
             .as_table()
@@ -437,7 +440,7 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
         let cpus: Vec<u64> = deployment
             .get("a")
             .expect("deployment.a")
-            .as_slice()
+            .as_array()
             .expect("run.tom: 'a.deployment.a' should be an array")
             .iter()
             .map(|c| {
@@ -449,7 +452,7 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
         let breakpoints: Vec<String> = a
             .get("breakpoints")
             .expect("no breakpoints?")
-            .as_slice()
+            .as_array()
             .expect("breakpoints not an array?")
             .iter()
             .map(|s| s.as_str().expect("breakpoint not a string?").to_string())
@@ -520,13 +523,16 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
         return;
     }
     type Row = (String, String, String, String, String, String);
-    let mut rdr = csv::Reader::from_file(csv_data_path).unwrap();
-    let rows = rdr.decode().collect::<csv::Result<Vec<Row>>>().unwrap();
+    let mut rdr = csv::Reader::from_path(csv_data_path).unwrap();
+    let rows = rdr
+        .deserialize()
+        .collect::<csv::Result<Vec<Row>>>()
+        .unwrap();
 
     // Create result.csv file:
     let csv_result: PathBuf = save_to.to_owned();
-    let mut wrtr = csv::Writer::from_file(csv_result.as_path()).unwrap();
-    wrtr.encode(&[
+    let mut wrtr = csv::Writer::from_path(csv_result.as_path()).unwrap();
+    wrtr.serialize(&[
         "EVENT_NAME",
         "INDEX",
         "TIME",

@@ -18,9 +18,9 @@ type ArchitectureMap = HashMap<&'static str, (&'static str, &'static str, &'stat
 
 /// Saves the event count for all architectures to a file.
 fn save_event_counts(key_to_name: &ArchitectureMap, csv_result: &Path) {
-    let mut writer = csv::Writer::from_file(csv_result).unwrap();
+    let mut writer = csv::Writer::from_path(csv_result).unwrap();
     writer
-        .encode(&[
+        .serialize(&[
             "year",
             "architecture",
             "core events",
@@ -79,7 +79,7 @@ fn save_event_counts(key_to_name: &ArchitectureMap, csv_result: &Path) {
         row.push(group_string.as_str());
 
         writer
-            .encode(&row.as_slice())
+            .serialize(&row.as_slice())
             .expect(format!("Can't write for for {:?} file", csv_result).as_str());
     }
 }
@@ -105,10 +105,10 @@ fn common_event_names(a: Option<&'static EventMap>, b: Option<&'static EventMap>
 
 /// Does pairwise comparison of all architectures and saves their shared events to a file.
 fn save_architecture_comparison(key_to_name: &ArchitectureMap, csv_result: &Path) {
-    let mut writer = csv::Writer::from_file(csv_result)
+    let mut writer = csv::Writer::from_path(csv_result)
         .expect(format!("Can't write {:?} file", csv_result).as_str());
     writer
-        .encode(&[
+        .serialize(&[
             "arch1",
             "year1",
             "arch2",
@@ -125,7 +125,7 @@ fn save_architecture_comparison(key_to_name: &ArchitectureMap, csv_result: &Path
             let events2 = COUNTER_MAP.get(format!("{}", key2).as_str());
 
             writer
-                .encode(&[
+                .serialize(&[
                     name1,
                     year1,
                     name2,
@@ -198,7 +198,7 @@ fn common_event_desc_distance(
                     edit_distance(value1.brief_description, value2.brief_description).to_string();
                 let uncore_str = if uncore { "true" } else { "false" };
 
-                writer.encode(&[
+                writer.serialize(&[
                     value1.event_name,
                     ed.as_str(),
                     uncore_str,
@@ -222,10 +222,10 @@ fn save_edit_distances(key_to_name: &ArchitectureMap, output_dir: &Path) {
             let mut csv_result = output_dir.to_path_buf();
             csv_result.push(format!("editdist_{}-vs-{}.csv", name1, name2));
 
-            let mut writer = csv::Writer::from_file(csv_result.clone())
+            let mut writer = csv::Writer::from_path(csv_result.clone())
                 .expect(format!("Can't open {:?}", csv_result).as_str());
             writer
-                .encode(&["event name", "edit distance", "uncore", "desc1", "desc2"])
+                .serialize(&["event name", "edit distance", "uncore", "desc1", "desc2"])
                 .expect(format!("Can't write {:?} header", csv_result).as_str());
 
             let events1 = COUNTER_MAP.get(format!("{}", key1).as_str());
@@ -244,9 +244,9 @@ fn save_event_descriptions(output_path: &Path) {
 
     let mut storage_location = PathBuf::from(output_path);
     storage_location.push("ivytown_events.dat");
-    let mut wtr = csv::Writer::from_file(storage_location.clone())
+    let mut wtr = csv::Writer::from_path(storage_location.clone())
         .expect(format!("Can't open {:?}", storage_location).as_str());
-    let r = wtr.encode(("unit", "code", "mask", "event_name"));
+    let r = wtr.serialize(("unit", "code", "mask", "event_name"));
     assert!(r.is_ok());
 
     for event in pevents.iter() {
@@ -255,7 +255,7 @@ fn save_event_descriptions(output_path: &Path) {
 
         match (&event.0.event_code, &event.0.umask) {
             (&Tuple::One(e1), &Tuple::One(m1)) => {
-                wtr.encode(vec![
+                wtr.serialize(vec![
                     unit,
                     &format!("{}", e1),
                     &format!("{}", m1),
@@ -264,7 +264,7 @@ fn save_event_descriptions(output_path: &Path) {
                 .ok();
             }
             (&Tuple::Two(e1, e2), &Tuple::Two(m1, m2)) => {
-                wtr.encode(vec![
+                wtr.serialize(vec![
                     unit,
                     &format!("{}", e1),
                     &format!("{}", m1),
@@ -272,7 +272,7 @@ fn save_event_descriptions(output_path: &Path) {
                 ])
                 .ok();
 
-                wtr.encode(vec![
+                wtr.serialize(vec![
                     unit,
                     &format!("{}", e2),
                     &format!("{}", m2),
@@ -281,7 +281,7 @@ fn save_event_descriptions(output_path: &Path) {
                 .ok();
             }
             (&Tuple::Two(e1, e2), &Tuple::One(m1)) => {
-                wtr.encode(vec![
+                wtr.serialize(vec![
                     unit,
                     &format!("{}", e1),
                     &format!("{}", m1),
@@ -289,7 +289,7 @@ fn save_event_descriptions(output_path: &Path) {
                 ])
                 .ok();
 
-                wtr.encode(vec![
+                wtr.serialize(vec![
                     unit,
                     &format!("{}", e2),
                     &format!("{}", m1),

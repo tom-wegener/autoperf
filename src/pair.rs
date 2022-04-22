@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -11,7 +12,7 @@ use std::thread;
 use std::fmt;
 
 use itertools::{iproduct, Itertools};
-use rustc_serialize::Encodable;
+use serde::Serialize;
 use std::time::Duration;
 use wait_timeout::ChildExt;
 
@@ -42,7 +43,7 @@ fn get_hostname() -> Option<String> {
     Some(String::from_utf8(c_str).unwrap())
 }
 
-#[derive(Debug, RustcEncodable)]
+#[derive(Debug, Serialize)]
 struct Deployment<'a> {
     description: &'static str,
     a: Vec<&'a CpuInfo>,
@@ -169,7 +170,7 @@ impl<'a> fmt::Display for Deployment<'a> {
     }
 }
 
-#[derive(Debug, RustcEncodable)]
+#[derive(Debug, Serialize)]
 struct Program<'a> {
     name: String,
     manifest_path: &'a Path,
@@ -189,7 +190,7 @@ struct Program<'a> {
 impl<'a> Program<'a> {
     fn from_toml(
         manifest_path: &'a Path,
-        config: &toml::Table,
+        config: &toml::value::Table,
         alone_default: bool,
     ) -> Program<'a> {
         let name: String = config["name"]
@@ -225,7 +226,7 @@ impl<'a> Program<'a> {
             v.as_bool().expect("'program.alone' should be boolean")
         });
         let args: Vec<String> = config["arguments"]
-            .as_slice()
+            .as_array()
             .expect("program.arguments not an array?")
             .iter()
             .map(|s| {
@@ -238,7 +239,7 @@ impl<'a> Program<'a> {
             config
                 .get("antagonist_arguments")
                 .map_or(args.clone(), |v| {
-                    v.as_slice()
+                    v.as_array()
                         .expect("program.antagonist_arguments not an array?")
                         .iter()
                         .map(|s| {
@@ -264,7 +265,7 @@ impl<'a> Program<'a> {
         });
 
         let breakpoints: Vec<String> = config.get("breakpoints").map_or(Vec::new(), |bs| {
-            bs.as_slice()
+            bs.as_array()
                 .expect("program.breakpoints not an array?")
                 .iter()
                 .map(|s| {
@@ -276,7 +277,7 @@ impl<'a> Program<'a> {
         });
         // TODO: this is currently not in use (remove?)
         let checkpoints: Vec<String> = config.get("checkpoints").map_or(Vec::new(), |cs| {
-            cs.as_slice()
+            cs.as_array()
                 .expect("program.checkpoints not an array?")
                 .iter()
                 .map(|s| {
@@ -366,7 +367,7 @@ impl<'a> Program<'a> {
     }
 }
 
-#[derive(RustcEncodable)]
+#[derive(Serialize)]
 struct Run<'a> {
     manifest_path: &'a Path,
     output_path: PathBuf,
@@ -470,9 +471,7 @@ impl<'a> Run<'a> {
         let mut run_toml_path = self.output_path.clone();
         run_toml_path.push("run.toml");
         let mut f = File::create(run_toml_path.as_path())?;
-        let mut e = toml::Encoder::new();
-        self.encode(&mut e).unwrap();
-        f.write_all(toml::encode_str(&e.toml).as_bytes())?;
+        f.write_all(toml::to_string(self).unwrap().as_bytes())?;
 
         let mut run_txt_path = self.output_path.clone();
         run_txt_path.push("run.txt");
@@ -599,19 +598,18 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
     let mut file = File::open(manifest.as_path()).expect("manifest.toml file does not exist?");
     let mut manifest_string = String::new();
     let _ = file.read_to_string(&mut manifest_string).unwrap();
-    let mut parser = toml::Parser::new(manifest_string.as_str());
-    let doc = match parser.parse() {
-        Some(doc) => doc,
-        None => {
-            error!("Can't parse the manifest file:\n{:?}", parser.errors);
+    let doc: BTreeMap<String, toml::Value> = match toml::from_str(manifest_string.as_str()) {
+        Ok(doc) => doc,
+        Err(e) => {
+            error!("Can't parse the manifest file:\n{:?}", e);
             process::exit(1);
         }
     };
-    let experiment: &toml::Table = doc["experiment"]
+    let experiment: &toml::value::Table = doc["experiment"]
         .as_table()
         .expect("Error in manifest.toml: 'experiment' should be a table.");
     let configuration: &[toml::Value] = experiment["configurations"]
-        .as_slice()
+        .as_array()
         .expect("Error in manifest.toml: 'configuration' attribute should be a list.");
     let configs: Vec<String> = configuration
         .iter()
@@ -626,7 +624,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
         .map_or(true, |v| v.as_bool().expect("'alone' should be boolean"));
     let profile_only: Option<Vec<String>> = experiment.get("profile_only_a").map(|progs| {
         progs
-            .as_slice()
+            .as_array()
             .expect("Error in manifest.toml: 'profile_only_a' should be a list.")
             .into_iter()
             .map(|p| {
@@ -638,7 +636,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
     });
     let profile_only_b: Option<Vec<String>> = experiment.get("profile_only_b").map(|progs| {
         progs
-            .as_slice()
+            .as_array()
             .expect("Error in manifest.toml: 'profile_only_b' should be a list.")
             .into_iter()
             .map(|p| {
@@ -652,7 +650,7 @@ pub fn pair(manifest_folder: &Path, dryrun: bool, start: usize, stepping: usize)
     let mut programs: Vec<Program> = Vec::with_capacity(2);
     for (key, _value) in &doc {
         if key.starts_with("program") {
-            let program_desc: &toml::Table = doc[key]
+            let program_desc: &toml::value::Table = doc[key]
                 .as_table()
                 .expect("Error in manifest.toml: 'program' should be a table.");
             programs.push(Program::from_toml(

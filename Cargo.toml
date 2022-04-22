@@ -16,17 +16,17 @@ documentation = "https://docs.rs/autoperf"
 pbr = "1.0.1"
 log = "0.4"
 env_logger = "0.6"
-csv = "0.*"
-lazy_static = "0.1.*"
-perfcnt = "0.7"
-toml = "0.2"
+csv = "1"
+lazy_static = "1"
+perfcnt = "0.8"
+toml = "0.5"
 nom = "^1.2.3"
 libc = "0.2.16"
 clap = { version = "2", features = ["yaml"] }
-x86 = { version = "0.45", features = ["performance-counter"] }
+x86 = { version = "0.47", features = ["performance-counter"] }
 phf = "0.9.*"
 itertools = "0.5"
-rustc-serialize = "0.3"
+serde = { version = "1", features = ["derive"] }
 wait-timeout = "0.1"
 
 [profile.release]
