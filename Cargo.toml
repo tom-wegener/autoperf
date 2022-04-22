@@ -27,7 +27,7 @@ x86 = { version = "0.47", features = ["performance-counter"] }
 phf = "0.9.*"
 itertools = "0.5"
 serde = { version = "1", features = ["derive"] }
-wait-timeout = "0.1"
+wait-timeout = "0.2"
 
 [profile.release]
 debug = true
