@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -96,10 +97,8 @@ impl<'a> Deployment<'a> {
         let cpus_len = cpus.len();
         assert!(cpus_len % 2 == 0);
 
-        let mut cores: Vec<Core> = cpus.iter().map(|c| c.core).collect();
+        let cores: BTreeSet<Core> = cpus.iter().map(|c| c.core).collect();
         assert!(cores.len() % 2 == 0);
-        cores.sort_unstable();
-        cores.dedup();
 
         let mut upper_half: Vec<&CpuInfo> = Vec::with_capacity(cpus_len / 2);
         let mut lower_half: Vec<&CpuInfo> = Vec::with_capacity(cpus_len / 2);
@@ -129,10 +128,8 @@ impl<'a> Deployment<'a> {
         let cpus_len = cpus.len();
         assert!(cpus_len % 2 == 0);
 
-        let mut l3s: Vec<L3> = cpus.iter().map(|c| c.l3).collect();
+        let l3s: BTreeSet<L3> = cpus.iter().map(|c| c.l3).collect();
         assert!(l3s.len() % 2 == 0);
-        l3s.sort_unstable();
-        l3s.dedup();
 
         let mut upper_half: Vec<&CpuInfo> = Vec::with_capacity(cpus_len / 2);
         let mut lower_half: Vec<&CpuInfo> = Vec::with_capacity(cpus_len / 2);

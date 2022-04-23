@@ -1,5 +1,6 @@
 use log::*;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
@@ -59,9 +60,7 @@ fn parse_perf_csv_file(
     let mut parsed_rows: Vec<OutputRow> = Vec::with_capacity(5000);
 
     // All the sockets this program is running on:
-    let mut all_sockets: Vec<Socket> = cpus.iter().map(|c| c.socket).collect();
-    all_sockets.sort_unstable();
-    all_sockets.dedup();
+    let all_sockets: BTreeSet<Socket> = cpus.iter().map(|c| c.socket).collect();
 
     // Timestamps for filtering start and end:
     let mut start: Option<f64> = None;
@@ -472,9 +471,7 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
         .collect();
 
     // All the sockets this program is running on:
-    let mut all_sockets: Vec<Socket> = all_cpus.iter().map(|c| c.socket).collect();
-    all_sockets.sort_unstable();
-    all_sockets.dedup();
+    let all_sockets: BTreeSet<Socket> = all_cpus.iter().map(|c| c.socket).collect();
 
     let uncore_filter = Filter::new(uncore_filter);
     let cpu_filter = Filter::new(cpu_filter);
@@ -498,13 +495,19 @@ pub fn aggregate(path: &Path, cpu_filter: &str, uncore_filter: &str, save_to: &P
                 }
             }
         }
-        Filter::All => considered_sockets.append(&mut mt.sockets()),
+        Filter::All => {
+            for s in mt.sockets() {
+                considered_sockets.push(s);
+            }
+        }
         Filter::Shared => {
             debug!(
                 "Uncore from sockets {:?} added since A uses these sockets at least partially.",
                 all_sockets
             );
-            considered_sockets.append(&mut all_sockets);
+            for s in all_sockets {
+                considered_sockets.push(s)
+            }
         }
         Filter::None => debug!("Ignore all uncore events."),
     };

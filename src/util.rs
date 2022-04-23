@@ -4,6 +4,7 @@ use log::error as lerror;
 use log::*;
 use nom::*;
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -221,10 +222,8 @@ impl MachineTopology {
     }
 
     pub fn cpus(&self) -> Vec<Cpu> {
-        let mut cpus: Vec<Cpu> = self.data.iter().map(|t| t.cpu).collect();
-        cpus.sort_unstable();
-        cpus.dedup();
-        cpus
+        let cpus: BTreeSet<Cpu> = self.data.iter().map(|t| t.cpu).collect();
+        cpus.into_iter().collect()
     }
 
     pub fn cpu(&self, cpu: Cpu) -> Option<&CpuInfo> {
@@ -232,24 +231,18 @@ impl MachineTopology {
     }
 
     pub fn cores(&self) -> Vec<Core> {
-        let mut cores: Vec<Core> = self.data.iter().map(|t| t.core).collect();
-        cores.sort_unstable();
-        cores.dedup();
-        cores
+        let cores: BTreeSet<Core> = self.data.iter().map(|t| t.core).collect();
+        cores.into_iter().collect()
     }
 
     pub fn sockets(&self) -> Vec<Socket> {
-        let mut sockets: Vec<Cpu> = self.data.iter().map(|t| t.socket).collect();
-        sockets.sort_unstable();
-        sockets.dedup();
-        sockets
+        let sockets: BTreeSet<Cpu> = self.data.iter().map(|t| t.socket).collect();
+        sockets.into_iter().collect()
     }
 
     pub fn nodes(&self) -> Vec<NodeInfo> {
-        let mut nodes: Vec<NodeInfo> = self.data.iter().map(|t| t.node).collect();
-        nodes.sort_unstable();
-        nodes.dedup();
-        nodes
+        let nodes: BTreeSet<NodeInfo> = self.data.iter().map(|t| t.node).collect();
+        nodes.into_iter().collect()
     }
 
     pub fn max_memory(&self) -> u64 {
@@ -257,10 +250,8 @@ impl MachineTopology {
     }
 
     pub fn l1(&self) -> Vec<L1> {
-        let mut l1: Vec<L1> = self.data.iter().map(|t| t.l1).collect();
-        l1.sort_unstable();
-        l1.dedup();
-        l1
+        let l1: BTreeSet<L1> = self.data.iter().map(|t| t.l1).collect();
+        l1.into_iter().collect()
     }
 
     pub fn l1_size(&self) -> Option<u64> {
@@ -277,10 +268,8 @@ impl MachineTopology {
     }
 
     pub fn l2(&self) -> Vec<L2> {
-        let mut l2: Vec<L2> = self.data.iter().map(|t| t.l2).collect();
-        l2.sort_unstable();
-        l2.dedup();
-        l2
+        let l2: BTreeSet<L2> = self.data.iter().map(|t| t.l2).collect();
+        l2.into_iter().collect()
     }
 
     pub fn l2_size(&self) -> Option<u64> {
@@ -297,10 +286,8 @@ impl MachineTopology {
     }
 
     pub fn l3(&self) -> Vec<L3> {
-        let mut l3: Vec<L3> = self.data.iter().map(|t| t.l3).collect();
-        l3.sort_unstable();
-        l3.dedup();
-        l3
+        let l3: BTreeSet<L3> = self.data.iter().map(|t| t.l3).collect();
+        l3.into_iter().collect()
     }
 
     pub fn l3_size(&self) -> Option<u64> {
@@ -341,15 +328,13 @@ impl MachineTopology {
     }
 
     fn cores_on_socket(&self, socket: Socket) -> Vec<Core> {
-        let mut cores: Vec<Core> = self
+        let cores: BTreeSet<Core> = self
             .data
             .iter()
             .filter(|c| c.socket == socket)
             .map(|c| c.core)
             .collect();
-        cores.sort_unstable();
-        cores.dedup();
-        cores
+        cores.into_iter().collect()
     }
 
     fn cores_on_l3(&self, l3: L3) -> Vec<&CpuInfo> {
